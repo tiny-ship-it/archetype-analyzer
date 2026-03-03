@@ -34,7 +34,7 @@ function parseContent(raw: string): Section[] {
     "Example Campaign Concept",
   ];
 
-  let remaining = raw;
+  const remaining = raw;
 
   for (let i = 0; i < headings.length; i++) {
     const heading = headings[i];
@@ -87,7 +87,7 @@ export function ResultCard({ brand, archetypeId, content, isStreaming }: ResultC
             {brand}{" "}
             <span className="text-amber-400">as the {archetype?.name || archetypeId}</span>
           </h2>
-          <p className="text-stone-400 text-sm mt-0.5">{archetype?.tagline}</p>
+          <p className="text-stone-400 text-sm mt-0.5">{archetype?.description?.split('.')[0]}.</p>
         </div>
         {isStreaming && (
           <div className="ml-auto flex items-center gap-2">
@@ -134,7 +134,7 @@ function SectionBlock({
         <span className="text-lg">{section.icon}</span>
         <h3
           className="text-xs font-bold uppercase tracking-widest"
-          style={{ color: archetype?.accentColor || "#92400e" }}
+          style={{ color: archetype?.color || "#92400e" }}
         >
           {section.title}
         </h3>
@@ -150,7 +150,7 @@ function SectionBlock({
             </p>
           ) : index === 0 ? (
             // Brand Voice — split adjectives from description
-            <BrandVoiceBlock content={section.content} accentColor={archetype?.accentColor} />
+            <BrandVoiceBlock content={section.content} color={archetype?.color} />
           ) : (
             <p>{section.content}</p>
           )}
@@ -162,10 +162,10 @@ function SectionBlock({
 
 function BrandVoiceBlock({
   content,
-  accentColor,
+  color,
 }: {
   content: string;
-  accentColor?: string;
+  color?: string;
 }) {
   const lines = content.split("\n").filter(Boolean);
   const firstLine = lines[0] || "";
@@ -183,7 +183,7 @@ function BrandVoiceBlock({
             <span
               key={i}
               className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider text-white"
-              style={{ backgroundColor: accentColor || "#92400e" }}
+              style={{ backgroundColor: color || "#92400e" }}
             >
               {adj}
             </span>

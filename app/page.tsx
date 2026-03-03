@@ -5,6 +5,7 @@ import { BrandInput } from "@/components/BrandInput";
 import { ArchetypeGrid } from "@/components/ArchetypeGrid";
 import { ResultCard } from "@/components/ResultCard";
 import { LoadingState } from "@/components/LoadingState";
+import { VisualCampaign } from "@/components/VisualCampaign";
 import { getArchetypeById } from "@/lib/archetypes";
 
 export default function Home() {
@@ -39,7 +40,7 @@ export default function Home() {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand: brand.trim(), context: context.trim(), archetype: selectedArchetype }),
+        body: JSON.stringify({ brand: brand.trim(), context: context.trim(), archetype: getArchetypeById(selectedArchetype!)?.name || selectedArchetype }),
         signal: controller.signal,
       });
 
@@ -210,6 +211,15 @@ export default function Home() {
             archetypeId={selectedArchetype}
             content={result}
             isStreaming={isStreaming}
+          />
+        )}
+
+        {/* Visual Campaign Generation */}
+        {!isStreaming && !isLoading && result && selectedArchetype && (
+          <VisualCampaign 
+            brand={brand}
+            archetypeId={selectedArchetype}
+            archetypeName={archetypeLabel || null} 
           />
         )}
 
