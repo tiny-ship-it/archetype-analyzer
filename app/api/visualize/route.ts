@@ -1,15 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
 
-export const runtime = "nodejs";
+export const runtime = "edge";
 export const maxDuration = 60; // 60 seconds
-
-const execAsync = promisify(exec);
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,12 +32,12 @@ export async function POST(req: NextRequest) {
 
     if (imageUrl) {
       console.log("Fetching reference image...", imageUrl);
-      let imageBuffer: Buffer;
+      let imageBuffer: ArrayBuffer;
       let mimeType = "image/jpeg";
       try {
         const imageRes = await fetch(imageUrl);
         if (!imageRes.ok) throw new Error("Failed to fetch image");
-        imageBuffer = Buffer.from(await imageRes.arrayBuffer());
+        imageBuffer = await imageRes.arrayBuffer();
         mimeType = imageRes.headers.get("content-type") || "image/jpeg";
       } catch (err) {
         console.error("Image fetch error:", err);
@@ -65,9 +58,11 @@ Format your response exactly as valid JSON with these keys:
   "imagePrompt": "A highly detailed visual description for the image generator..."
 }`;
 
+      // Convert ArrayBuffer to Base64 in Edge environment
+      const base64String = Buffer.from(imageBuffer).toString('base64');
       const imagePart = {
         inlineData: {
-          data: imageBuffer.toString("base64"),
+          data: base64String,
           mimeType
         }
       };
@@ -107,36 +102,63 @@ Format your response exactly as valid JSON with these keys:
       });
     }
 
-    // Step 2: Generate the image using Nano Banana script
-    const tmpDir = os.tmpdir();
-    const filename = `campaign_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
-    const imagePath = path.join(tmpDir, filename);
-    const scriptPath = "/usr/lib/node_modules/openclaw/skills/nano-banana-pro/scripts/generate_image.py";
+    // Step 2: Generate the image natively via REST API (Nano Banana / Gemini 3.1 Flash Image)
+    console.log("Generating image with Nano Banana...");
     
-    // Safely escape the prompt for bash
-    const safePrompt = conceptData.imagePrompt.replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`');
-    
-    const command = `uv run ${scriptPath} --prompt "${safePrompt}" --filename "${imagePath}" --resolution 1K`;
-    
-    console.log("Running image generation command...");
     try {
-      await execAsync(command, { cwd: tmpDir, timeout: 45000, env: process.env });
-      console.log("Image generation complete.");
-    } catch (err) {
-      console.error("Image generation failed:", err);
-      return new Response(JSON.stringify({ error: "Failed to generate image" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+      const imageGenRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { text: conceptData.imagePrompt }
+                ]
+              }
+            ],
+            generationConfig: {
+              responseModalities: ["IMAGE"],
+              imageConfig: {
+                imageSize: "1K"
+              }
+            }
+          }),
+        }
+      );
 
-    // Step 3: Read image and return as base64
-    try {
-      const imageBuffer = await fs.readFile(imagePath);
-      const base64Image = imageBuffer.toString("base64");
+      if (!imageGenRes.ok) {
+        const errText = await imageGenRes.text();
+        console.error("Image API error:", errText);
+        throw new Error(`API returned ${imageGenRes.status}: ${errText}`);
+      }
+
+      const imgData = await imageGenRes.json();
       
-      // Cleanup
-      await fs.unlink(imagePath).catch(console.error);
+      let base64Image = null;
+      if (
+        imgData.candidates && 
+        imgData.candidates.length > 0 && 
+        imgData.candidates[0].content && 
+        imgData.candidates[0].content.parts
+      ) {
+        const parts = imgData.candidates[0].content.parts;
+        for (const part of parts) {
+          if (part.inlineData && part.inlineData.data) {
+            base64Image = part.inlineData.data;
+            break;
+          }
+        }
+      }
+
+      if (!base64Image) {
+        throw new Error("No image data returned from Gemini 3.1 Flash Image API.");
+      }
 
       return new Response(JSON.stringify({
         ...conceptData,
@@ -145,8 +167,8 @@ Format your response exactly as valid JSON with these keys:
         headers: { "Content-Type": "application/json" },
       });
     } catch (err) {
-      console.error("Failed to read generated image:", err);
-      return new Response(JSON.stringify({ error: "Failed to load generated image" }), {
+      console.error("Image generation failed:", err);
+      return new Response(JSON.stringify({ error: "Failed to generate image" }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
